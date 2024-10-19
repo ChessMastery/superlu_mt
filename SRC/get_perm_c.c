@@ -342,6 +342,62 @@ at_plus_a(
     SUPERLU_FREE(t_rowind);
 }
 
+/*!
+ * \brief Get METIS' permutation for matrix B
+ *
+ * \param[in]  n Number of columns in matrix B.
+ * \param[in]  bnz Number of nonzeros in matrix B.
+ * \param[in]  b_colptr Column pointer of size n+1 for matrix B.
+ * \param[in]  b_rowind Row indices of size bnz for matrix B.
+ * \param[out] perm_c Column permutation vector.
+ */
+void get_metis(int n, int_t bnz, int_t *b_colptr,
+               int_t *b_rowind, int *perm_c)
+{
+/* #ifdef HAVE_METIS */
+    /*#define METISOPTIONS 8*/
+#define METISOPTIONS 40
+    int_t metis_options[METISOPTIONS];
+    int numflag = 0; /* C-Style ordering */
+    int_t i, nm;
+    int_t *perm, *iperm;
+
+    extern int METIS_NodeND(int_t*, int_t*, int_t*, int_t*, int_t*,
+			    int_t*, int_t*);
+
+    metis_options[0] = 0; /* Use Defaults for now */
+
+    perm = intMalloc(2*n);
+    if (!perm) SUPERLU_ABORT("intMalloc fails for perm.");
+    iperm = perm + n;
+    nm = n;
+
+    /* Call metis */
+#undef USEEND
+#ifdef USEEND
+    METIS_EdgeND(&nm, b_colptr, b_rowind, &numflag, metis_options,
+		 perm, iperm);
+#else
+
+    /* Earlier version 3.x.x */
+    /* METIS_NodeND(&nm, b_colptr, b_rowind, &numflag, metis_options,
+       perm, iperm);*/
+
+    /* Latest version 4.x.x */
+    METIS_NodeND(&nm, b_colptr, b_rowind, NULL, NULL, perm, iperm);
+
+    /*check_perm_dist("metis perm",  n, perm);*/
+#endif
+
+    /* Copy the permutation vector into SuperLU data structure. */
+    for (i = 0; i < n; ++i) perm_c[i] = iperm[i];
+
+    SUPERLU_FREE(b_colptr);
+    SUPERLU_FREE(b_rowind);
+    SUPERLU_FREE(perm);
+/* #endif */ /* HAVE_METIS */
+}
+
 void
 get_perm_c(int_t ispec, SuperMatrix *A, int_t *perm_c)
 /*
@@ -388,13 +444,13 @@ get_perm_c(int_t ispec, SuperMatrix *A, int_t *perm_c)
 
     t = SuperLU_timer_();
     switch ( ispec ) {
-        case 0: /* Natural ordering */
+        case NATURAL: /* Natural ordering */
 	      for (i = 0; i < n; ++i) perm_c[i] = i;
 #if ( PRNTlevel >= 1 )
 	      printf("Use natural column ordering.\n");
 #endif
 	      return;
-        case 1: /* Minimum degree ordering on A'*A */
+        case MMD_ATA: /* Minimum degree ordering on A'*A */
 	      getata(m, n, Astore->nnz, Astore->colptr, Astore->rowind,
 		     &bnz, &b_colptr, &b_rowind);
 	      printf("Use minimum degree ordering on A'*A.\n");
@@ -403,7 +459,7 @@ get_perm_c(int_t ispec, SuperMatrix *A, int_t *perm_c)
 	      printf("Form A'*A time = %8.3f\n", t);
 #endif
 	      break;
-        case 2: /* Minimum degree ordering on A'+A */
+        case MMD_AT_PLUS_A: /* Minimum degree ordering on A'+A */
 	      if ( m != n ) SUPERLU_ABORT("Matrix is not square");
 	      at_plus_a(n, Astore->nnz, Astore->colptr, Astore->rowind,
 			&bnz, &b_colptr, &b_rowind);
@@ -413,13 +469,49 @@ get_perm_c(int_t ispec, SuperMatrix *A, int_t *perm_c)
 	      printf("Form A'+A time = %8.3f\n", t);
 #endif
 	      break;
-        case 3: /* Approximate minimum degree column ordering. */
+        case COLAMD: /* Approximate minimum degree column ordering. */
 	      get_colamd(m, n, Astore->nnz, Astore->colptr, Astore->rowind,
 			 perm_c);
 #if ( PRNTlevel >= 1 )
 	      printf(".. Use approximate minimum degree column ordering.\n");
 #endif
 	      return; 
+		  /* #ifdef HAVE_METIS */
+    case METIS_ATA: /* METIS ordering on A'*A */
+	    getata(m, n, Astore->nnz, Astore->colptr, Astore->rowind,
+		     &bnz, &b_colptr, &b_rowind);
+
+	    if ( bnz ) { /* non-empty adjacency structure */
+		  get_metis(n, bnz, b_colptr, b_rowind, perm_c);
+	    } else { /* e.g., diagonal matrix */
+		for (i = 0; i < n; ++i) perm_c[i] = i;
+		SUPERLU_FREE(b_colptr);
+		/* b_rowind is not allocated in this case */
+	    }
+
+#if ( PRNTlevel>=1 )
+	    printf(".. Use METIS ordering on A'*A\n");
+#endif
+	    return;
+    case METIS_AT_PLUS_A: /* METIS ordering on A'*A */
+	if ( m != n ) SUPERLU_ABORT("Matrix is not square");
+	at_plus_a(n, Astore->nnz, Astore->colptr, Astore->rowind,
+		  &bnz, &b_colptr, &b_rowind);
+
+        if ( bnz ) { /* non-empty adjacency structure */
+	    get_metis(n, bnz, b_colptr, b_rowind, perm_c);
+        } else { /* e.g., diagonal matrix */
+	    for (i = 0; i < n; ++i) perm_c[i] = i;
+		SUPERLU_FREE(b_colptr);
+	    /* b_rowind is not allocated in this case */
+	}
+
+#if ( PRNTlevel>=1 )
+	printf(".. Use METIS ordering on A'+A\n");
+#endif
+	return;
+/* #endif */ /* HAVE_METIS */
+
         default:
 	      SUPERLU_ABORT("Invalid ISPEC");
     }

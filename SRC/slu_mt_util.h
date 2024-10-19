@@ -113,8 +113,8 @@ at the top-level directory.
 typedef enum {NO, YES}                       yes_no_t;
 typedef enum {NOTRANS, TRANS, CONJ}          trans_t;
 typedef enum {DOFACT, EQUILIBRATE, FACTORED} fact_t;
-typedef enum {NATURAL, MMD_ATA, MMD_AT_PLUS_A, COLAMD,
-	      METIS_AT_PLUS_A, PARMETIS, MY_PERMC} colperm_t;
+typedef enum {NATURAL, MMD_ATA, MMD_AT_PLUS_A, COLAMD, METIS_AT_PLUS_A,
+	       PARMETIS, MY_PERMC, METIS_ATA, PORD_ATA, PORD_AT_PLUS_A} colperm_t;
 typedef enum {NOEQUIL, ROW, COL, BOTH}       equed_t;
 typedef enum {LUSUP, UCOL, LSUB, USUB}       MemType;
 
